@@ -2,7 +2,7 @@
     "compilerOptions": {
         "target": "ES2020",
         "module": "CommonJS",
-        "rootDir": "src",
+        "rootDir": ".",
         "outDir": "dist",
         "strict": true,
         "esModuleInterop": true,
@@ -11,6 +11,6 @@
         "forceConsistentCasingInFileNames": true,
         "allowJs": true
     },
-    "include": ["src/**/*.ts", "config/**/*.js"],
-    "exclude": ["node_modules", "dist"]
+    "include": ["src/**/*.ts"],
+    "exclude": ["node_modules", "dist", "config"]
 }
