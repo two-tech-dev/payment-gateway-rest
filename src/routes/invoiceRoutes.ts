@@ -25,10 +25,7 @@ export default async function invoiceRoutes(
     fastify.post(
         "/invoices",
         { preHandler: apiKeyGuard },
-        async (
-            request: FastifyRequest<{ Body: unknown }>,
-            reply: FastifyReply,
-        ) => {
+        async (request, reply) => {
             const parseResult = createInvoiceSchema.safeParse(request.body);
 
             if (!parseResult.success) {

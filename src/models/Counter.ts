@@ -1,6 +1,6 @@
-import { Schema, model, type Document } from "mongoose";
+import { Schema, model } from "mongoose";
 
-interface CounterDocument extends Document {
+interface CounterDocument {
     _id: string;
     seq: number;
 }
