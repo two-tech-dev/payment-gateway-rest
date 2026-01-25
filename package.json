@@ -1,0 +1,33 @@
+{
+    "name": "hyper-tech-payment",
+    "version": "1.0.0",
+    "description": "Hyper Tech Payment gateway backend built with Node.js, TypeScript, and MongoDB.",
+    "main": "dist/index.js",
+    "scripts": {
+        "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+        "build": "tsc -p tsconfig.json",
+        "start": "node dist/index.js",
+        "lint": "tsc --noEmit",
+        "test": "echo \"Chua co test tu dong\""
+    },
+    "keywords": [
+        "payment",
+        "gateway",
+        "hyper-tech"
+    ],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "axios": "^1.6.7",
+        "dotenv": "^16.4.5",
+        "fastify": "^4.29.1",
+        "mongoose": "^8.2.1",
+        "node-cron": "^3.0.3",
+        "zod": "^3.22.4"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.17",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.4.2"
+    }
+}
