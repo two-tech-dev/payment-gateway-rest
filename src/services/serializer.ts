@@ -16,6 +16,7 @@ export type InvoicePayload = {
     status: InvoiceStatus;
     webhookUrl?: string;
     transactionSnapshot?: TransactionSnapshot;
+    expiresAt: Date;
     completedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -47,6 +48,7 @@ export function toInvoicePayload(
         status: plain.status,
         webhookUrl: plain.webhookUrl,
         transactionSnapshot: plain.transactionSnapshot,
+        expiresAt: plain.expiresAt,
         completedAt: plain.completedAt,
         createdAt: plain.createdAt,
         updatedAt: plain.updatedAt,

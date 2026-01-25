@@ -1,7 +1,9 @@
 import { Schema, model, type Document } from "mongoose";
 import gatewayConfig from "../config/gatewayConfig";
 
-export type InvoiceStatus = "pending" | "completed" | "failed";
+export type InvoiceStatus = "pending" | "completed" | "failed" | "expired";
+
+export const INVOICE_EXPIRY_MINUTES = 15;
 
 export interface TransactionSnapshot {
     transactionID?: string;
@@ -22,6 +24,7 @@ export interface Invoice {
     status: InvoiceStatus;
     webhookUrl?: string;
     transactionSnapshot?: TransactionSnapshot;
+    expiresAt: Date;
     completedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -45,9 +48,10 @@ const invoiceSchema = new Schema<InvoiceDocument>(
         description: { type: String },
         status: {
             type: String,
-            enum: ["pending", "completed", "failed"],
+            enum: ["pending", "completed", "failed", "expired"],
             default: "pending",
         },
+        expiresAt: { type: Date, required: true },
         webhookUrl: { type: String },
         transactionSnapshot: {
             transactionID: { type: String },

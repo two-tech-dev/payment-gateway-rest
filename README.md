@@ -1,6 +1,6 @@
 # Hyper Tech Payment Gateway
 
-Node.js + TypeScript backend that exposes a minimal set of APIs to create and track deposit invoices for Hyper Tech Payment. The service persists data in MongoDB, white-lists partner sites via `config/config.js`, broadcasts invoice events to Discord, and reconciles paid invoices through the SieuThiCode Viettin history API.
+Node.js + TypeScript backend that exposes a minimal set of APIs to create and track deposit invoices for Hyper Tech Payment. The service persists data in MongoDB, white-lists partner sites via `config/config.js`, broadcasts invoice events to Discord, and reconciles paid invoices through the SieuThiCode MBBank history API.
 
 ## Features
 
@@ -8,7 +8,7 @@ Node.js + TypeScript backend that exposes a minimal set of APIs to create and tr
 - Invoice creation with optional webhook callbacks and automatic memo code prefix (`HTS`).
 - Invoice lookup endpoint to check payment status.
 - Discord notifications when invoices are created.
-- Cron reconciliation (every 2 minutes) that marks invoices completed when matching transactions are found via the third-party API response.
+- Cron reconciliation (every 30 seconds) that marks invoices completed when matching transactions are found via the third-party API response.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ Required environment variables (see `.env.example`):
 - `MONGO_URI` – MongoDB connection string (provided URI).
 - `API_KEY` – API key required in `x-api-key` header.
 - `DISCORD_WEBHOOK_URL` – Discord webhook that receives invoice notifications.
-- `HISTORY_API_TOKEN` – Token appended to `https://api.sieuthicode.net/historyapiviettinv2/<TOKEN>`.
+- `HISTORY_API_TOKEN` – Token appended to `https://api.sieuthicode.net/historyapimbbankv2/<TOKEN>`.
 
 ### config/config.js
 
@@ -127,9 +127,9 @@ Returns the same invoice payload with updated status, `transactionSnapshot`, and
 
 ## Cron Reconciliation Flow
 
-The job defined in `src/jobs/invoiceReconciliation.ts` runs every 2 minutes (Asia/Ho_Chi_Minh):
+The job defined in `src/jobs/invoiceReconciliation.ts` runs every 30 seconds (Asia/Ho_Chi_Minh):
 
-1. Calls `https://api.sieuthicode.net/historyapiviettinv2/<HISTORY_API_TOKEN>`.
+1. Calls `https://api.sieuthicode.net/historyapimbbankv2/<HISTORY_API_TOKEN>`.
 2. For each `IN` transaction, extracts the `HTS` memo from the description (`parse_order_id` equivalent in `src/utils/orderId.ts`).
 3. Marks the matching invoice as `completed`, stores the transaction snapshot, triggers the merchant webhook (if provided), and logs the update.
 

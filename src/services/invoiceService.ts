@@ -2,6 +2,7 @@ import gatewayConfig from "../config/gatewayConfig";
 import { env } from "../config/env";
 import {
     InvoiceModel,
+    INVOICE_EXPIRY_MINUTES,
     type InvoiceDocument,
     type InvoiceLean,
 } from "../models/Invoice";
@@ -34,6 +35,8 @@ export async function createInvoice(
         "VND"
     ).toUpperCase();
 
+    const expiresAt = new Date(Date.now() + INVOICE_EXPIRY_MINUTES * 60 * 1000);
+
     const invoice = await InvoiceModel.create({
         invoiceId,
         memoCode,
@@ -43,6 +46,7 @@ export async function createInvoice(
         currency,
         description: dto.description,
         webhookUrl: dto.webhookUrl,
+        expiresAt,
     });
 
     return invoice;
@@ -50,4 +54,23 @@ export async function createInvoice(
 
 export function getInvoiceById(invoiceId: number): Promise<InvoiceLean | null> {
     return InvoiceModel.findOne({ invoiceId }).lean();
+}
+
+export function isInvoiceExpired(invoice: InvoiceLean): boolean {
+    return (
+        invoice.status === "pending" && new Date() > new Date(invoice.expiresAt)
+    );
+}
+
+export async function markExpiredInvoices(): Promise<number> {
+    const result = await InvoiceModel.updateMany(
+        {
+            status: "pending",
+            expiresAt: { $lt: new Date() },
+        },
+        {
+            $set: { status: "expired" },
+        },
+    );
+    return result.modifiedCount;
 }

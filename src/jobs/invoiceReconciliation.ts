@@ -3,15 +3,29 @@ import cron from "node-cron";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../config/env";
 import { InvoiceModel } from "../models/Invoice";
+import { markExpiredInvoices } from "../services/invoiceService";
 import { notifyInvoiceWebhook } from "../services/webhookService";
 import { parseOrderId } from "../utils/orderId";
 
 interface RemoteTransaction {
     transactionID?: string;
-    amount?: number;
+    amount?: number | string;
     description?: string;
     transactionDate?: string;
     type?: string;
+}
+
+function normalizeAmount(value?: number | string): number | undefined {
+    if (typeof value === "number") {
+        return Number.isNaN(value) ? undefined : value;
+    }
+
+    if (typeof value === "string") {
+        const parsed = Number(value);
+        return Number.isNaN(parsed) ? undefined : parsed;
+    }
+
+    return undefined;
 }
 
 export function startInvoiceReconciliationJob(logger: FastifyBaseLogger): void {
@@ -23,10 +37,16 @@ export function startInvoiceReconciliationJob(logger: FastifyBaseLogger): void {
     }
 
     cron.schedule(
-        "*/2 * * * *",
+        "*/30 * * * * *",
         async () => {
             try {
-                const apiUrl = `https://api.sieuthicode.net/historyapiviettinv2/${env.historyApiToken}`;
+                // Đánh dấu các invoice đã hết hạn
+                const expiredCount = await markExpiredInvoices();
+                if (expiredCount > 0) {
+                    logger.info(`Da danh dau ${expiredCount} hoa don het han`);
+                }
+
+                const apiUrl = `https://api.sieuthicode.net/historyapimbbankv2/${env.historyApiToken}`;
                 const response = await axios.get(apiUrl, { timeout: 10000 });
                 const transactions = Array.isArray(response.data?.transactions)
                     ? (response.data.transactions as RemoteTransaction[])
@@ -53,15 +73,18 @@ export function startInvoiceReconciliationJob(logger: FastifyBaseLogger): void {
                     const invoice = await InvoiceModel.findOne({
                         invoiceId: orderId,
                         status: "pending",
+                        expiresAt: { $gt: new Date() },
                     });
 
                     if (!invoice) {
                         continue;
                     }
 
+                    const amountValue = normalizeAmount(transaction.amount);
+
                     if (
-                        typeof transaction.amount === "number" &&
-                        transaction.amount < invoice.amount
+                        typeof amountValue === "number" &&
+                        amountValue < invoice.amount
                     ) {
                         continue;
                     }
@@ -70,7 +93,7 @@ export function startInvoiceReconciliationJob(logger: FastifyBaseLogger): void {
                     invoice.completedAt = new Date();
                     invoice.transactionSnapshot = {
                         transactionID: transaction.transactionID,
-                        amount: transaction.amount,
+                        amount: amountValue,
                         description: transaction.description,
                         transactionDate: transaction.transactionDate,
                         type: transaction.type,
@@ -92,5 +115,5 @@ export function startInvoiceReconciliationJob(logger: FastifyBaseLogger): void {
         },
     );
 
-    logger.info("Da len lich cron doi soat hoa don (*/2 * * * *).");
+    logger.info("Da len lich cron doi soat hoa don (*/30 * * * * *).");
 }

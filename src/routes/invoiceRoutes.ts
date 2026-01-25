@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { apiKeyGuard } from "../middleware/apiKeyAuth";
+import { originGuard } from "../middleware/originGuard";
 import { isSiteAllowed } from "../utils/siteGuard";
 import { createInvoice, getInvoiceById } from "../services/invoiceService";
 import { toInvoicePayload } from "../services/serializer";
@@ -64,7 +65,7 @@ export default async function invoiceRoutes(
 
     fastify.get<{ Params: { invoiceId: string } }>(
         "/invoices/:invoiceId",
-        { preHandler: apiKeyGuard },
+        { preHandler: originGuard },
         async (
             request: FastifyRequest<{ Params: { invoiceId: string } }>,
             reply: FastifyReply,
