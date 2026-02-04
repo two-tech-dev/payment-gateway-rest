@@ -17,4 +17,12 @@ export const env = {
     discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
     historyApiToken: process.env.HISTORY_API_TOKEN,
     memoPrefix: "HTS",
+
+    // JWT
+    jwtSecret: process.env.JWT_SECRET || "hypertech-jwt-secret-key-2024",
+
+    // Admin user for seeding
+    adminEmail: process.env.ADMIN_EMAIL || "admin@hpayment.vn",
+    adminPassword: process.env.ADMIN_PASSWORD || "admin123",
+    adminName: process.env.ADMIN_NAME || "Admin",
 };

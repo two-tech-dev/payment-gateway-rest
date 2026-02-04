@@ -2,10 +2,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { apiKeyGuard } from "../middleware/apiKeyAuth";
 import { originGuard } from "../middleware/originGuard";
+import { jwtGuard } from "../middleware/jwtAuth";
 import { isSiteAllowed } from "../utils/siteGuard";
 import { createInvoice, getInvoiceById } from "../services/invoiceService";
 import { toInvoicePayload } from "../services/serializer";
 import { notifyInvoiceCreated } from "../services/discordService";
+import { InvoiceModel } from "../models/Invoice";
 
 const createInvoiceSchema = z.object({
     amount: z.coerce.number().positive("So tien phai lon hon 0"),
@@ -19,9 +21,68 @@ const invoiceIdParamsSchema = z.object({
     invoiceId: z.coerce.number().int().positive(),
 });
 
+const listInvoicesQuerySchema = z.object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
+    status: z.enum(["pending", "completed", "failed", "expired"]).optional(),
+});
+
 export default async function invoiceRoutes(
     fastify: FastifyInstance,
 ): Promise<void> {
+    // GET /api/invoices - List all invoices with pagination (requires JWT)
+    fastify.get(
+        "/invoices",
+        { preHandler: jwtGuard },
+        async (request, reply) => {
+            const parseResult = listInvoicesQuerySchema.safeParse(request.query);
+            const { page, limit, status } = parseResult.success
+                ? parseResult.data
+                : { page: 1, limit: 20, status: undefined };
+
+            try {
+                const filter: Record<string, unknown> = {};
+                if (status) {
+                    filter.status = status;
+                }
+
+                const total = await InvoiceModel.countDocuments(filter);
+                const invoices = await InvoiceModel.find(filter)
+                    .sort({ createdAt: -1 })
+                    .skip((page - 1) * limit)
+                    .limit(limit)
+                    .lean();
+
+                return reply.send({
+                    invoices: invoices.map((inv) => ({
+                        invoiceId: inv.invoiceId,
+                        memoCode: inv.memoCode,
+                        amount: inv.amount,
+                        currency: inv.currency,
+                        status: inv.status,
+                        description: inv.description,
+                        siteUrl: inv.siteUrl,
+                        createdAt: inv.createdAt,
+                        completedAt: inv.completedAt,
+                        expiresAt: inv.expiresAt,
+                    })),
+                    pagination: {
+                        page,
+                        limit,
+                        total,
+                        totalPages: Math.ceil(total / limit),
+                    },
+                });
+            } catch (error) {
+                request.log.error({ err: error }, "Lay danh sach invoices that bai");
+                return reply.code(500).send({
+                    message: "Khong the lay danh sach hoa don",
+                });
+            }
+        },
+    );
+
+    // POST /api/invoices - Create invoice (requires API key)
     fastify.post(
         "/invoices",
         { preHandler: apiKeyGuard },
@@ -37,10 +98,12 @@ export default async function invoiceRoutes(
 
             const payload = parseResult.data;
 
-            if (!isSiteAllowed(payload.siteUrl)) {
+            // Check allowed sites from database
+            const isAllowed = await isSiteAllowed(payload.siteUrl);
+            if (!isAllowed) {
                 return reply.code(403).send({
                     message:
-                        "siteUrl khong nam trong danh sach duoc phep (config.js)",
+                        "siteUrl khong nam trong danh sach duoc phep",
                 });
             }
 
@@ -60,6 +123,7 @@ export default async function invoiceRoutes(
         },
     );
 
+    // GET /api/invoices/:invoiceId - Get invoice by ID
     fastify.get<{ Params: { invoiceId: string } }>(
         "/invoices/:invoiceId",
         { preHandler: originGuard },

@@ -1,10 +1,4 @@
-import gatewayConfig from "../config/gatewayConfig";
-
-const allowedOrigins = new Set(
-    gatewayConfig.allowedSites
-        .map((site) => normalizeSiteOrigin(site))
-        .filter((origin): origin is string => Boolean(origin)),
-);
+import { getSettings } from "../models/Settings";
 
 export function normalizeSiteOrigin(siteUrl: string): string | null {
     try {
@@ -14,12 +8,19 @@ export function normalizeSiteOrigin(siteUrl: string): string | null {
     }
 }
 
-export function isSiteAllowed(siteUrl: string): boolean {
+export async function isSiteAllowed(siteUrl: string): Promise<boolean> {
     const origin = normalizeSiteOrigin(siteUrl);
 
     if (!origin) {
         return false;
     }
+
+    const settings = await getSettings();
+    const allowedOrigins = new Set(
+        settings.allowedSites
+            .map((site) => normalizeSiteOrigin(site))
+            .filter((o): o is string => Boolean(o)),
+    );
 
     if (allowedOrigins.size === 0) {
         return false;

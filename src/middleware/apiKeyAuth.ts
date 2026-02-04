@@ -3,8 +3,7 @@ import type {
     FastifyRequest,
     preHandlerHookHandler,
 } from "fastify";
-import { env } from "../config/env";
-import gatewayConfig from "../config/gatewayConfig";
+import { getSettings } from "../models/Settings";
 
 function extractApiKey(request: FastifyRequest): string | null {
     const headerKey = request.headers["x-api-key"];
@@ -21,9 +20,9 @@ export const apiKeyGuard: preHandlerHookHandler = async (
     reply: FastifyReply,
 ) => {
     const key = extractApiKey(request);
-    const expectedKey = env.apiKey || gatewayConfig.fallbackApiKey;
+    const settings = await getSettings();
 
-    if (!expectedKey || key !== expectedKey) {
+    if (!settings.apiKey || key !== settings.apiKey) {
         reply.code(401).send({
             message: "Khong duoc phep: API key khong hop le",
         });
