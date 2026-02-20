@@ -17,7 +17,7 @@ async function bootstrap(): Promise<void> {
         origin: true, // Allow all origins
         credentials: true,
         methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+        allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "X-Webhook-Signature", "X-Webhook-Timestamp"],
     });
 
     try {

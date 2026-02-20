@@ -5,6 +5,7 @@ import {
     SettingsModel,
     getSettings,
     generateApiKey,
+    generateWebhookSecret,
 } from "../models/Settings";
 
 const updateWebhookSchema = z.object({
@@ -32,6 +33,7 @@ export default async function settingsRoutes(
                 const settings = await getSettings();
                 return reply.send({
                     apiKey: settings.apiKey,
+                    webhookSecret: settings.webhookSecret,
                     webhookUrl: settings.webhookUrl,
                     allowedSites: settings.allowedSites,
                 });
@@ -73,6 +75,7 @@ export default async function settingsRoutes(
                     message: "Luu settings thanh cong",
                     settings: {
                         apiKey: settings.apiKey,
+                        webhookSecret: settings.webhookSecret,
                         webhookUrl: settings.webhookUrl,
                         allowedSites: settings.allowedSites,
                     },
@@ -133,6 +136,28 @@ export default async function settingsRoutes(
             } catch (error) {
                 request.log.error({ err: error }, "Tao API key that bai");
                 return reply.code(500).send({ message: "Khong the tao API key moi" });
+            }
+        },
+    );
+
+    // POST /api/settings/webhook-secret/regenerate
+    fastify.post(
+        "/settings/webhook-secret/regenerate",
+        { preHandler: jwtGuard },
+        async (request, reply) => {
+            try {
+                const settings = await getSettings();
+                settings.webhookSecret = generateWebhookSecret();
+                await settings.save();
+
+                return reply.send({
+                    success: true,
+                    message: "Tao webhook secret moi thanh cong",
+                    webhookSecret: settings.webhookSecret,
+                });
+            } catch (error) {
+                request.log.error({ err: error }, "Tao webhook secret that bai");
+                return reply.code(500).send({ message: "Khong the tao webhook secret moi" });
             }
         },
     );
