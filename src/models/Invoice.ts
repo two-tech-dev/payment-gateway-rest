@@ -2,6 +2,8 @@ import { Schema, model, type Document } from "mongoose";
 import gatewayConfig from "../config/gatewayConfig";
 
 export type InvoiceStatus = "pending" | "completed" | "failed" | "expired";
+export const PAYMENT_METHODS = ["mbbank", "vietcombank"] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export const INVOICE_EXPIRY_MINUTES = 15;
 
@@ -11,6 +13,7 @@ export interface TransactionSnapshot {
     description?: string;
     transactionDate?: string;
     type?: string;
+    paymentMethod?: PaymentMethod;
 }
 
 export interface Invoice {
@@ -20,6 +23,7 @@ export interface Invoice {
     siteOrigin: string;
     amount: number;
     currency: string;
+    paymentMethods: PaymentMethod[];
     description?: string;
     status: InvoiceStatus;
     webhookUrl?: string;
@@ -44,6 +48,16 @@ const invoiceSchema = new Schema<InvoiceDocument>(
         currency: {
             type: String,
             default: (gatewayConfig.defaultCurrency || "VND").toUpperCase(),
+        },
+        paymentMethods: {
+            type: [
+                {
+                    type: String,
+                    enum: PAYMENT_METHODS,
+                },
+            ],
+            required: true,
+            default: () => [...PAYMENT_METHODS],
         },
         description: { type: String },
         status: {

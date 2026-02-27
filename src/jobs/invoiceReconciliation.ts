@@ -2,7 +2,7 @@ import axios from "axios";
 import cron from "node-cron";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../config/env";
-import { InvoiceModel } from "../models/Invoice";
+import { type PaymentMethod, InvoiceModel } from "../models/Invoice";
 import { markExpiredInvoices } from "../services/invoiceService";
 import { notifyInvoiceWebhook } from "../services/webhookService";
 import { parseOrderId } from "../utils/orderId";
@@ -13,6 +13,12 @@ interface RemoteTransaction {
     description?: string;
     transactionDate?: string;
     type?: string;
+}
+
+interface HistorySourceConfig {
+    paymentMethod: PaymentMethod;
+    apiUrl: string;
+    headers?: Record<string, string>;
 }
 
 function normalizeAmount(value?: number | string): number | undefined {
@@ -28,10 +34,51 @@ function normalizeAmount(value?: number | string): number | undefined {
     return undefined;
 }
 
+function getHistorySourceConfigs(): HistorySourceConfig[] {
+    const sources: HistorySourceConfig[] = [];
+
+    if (env.historyApiMbToken) {
+        sources.push({
+            paymentMethod: "mbbank",
+            apiUrl: `https://api.sieuthicode.net/historyapimbbankv2/${env.historyApiMbToken}`,
+        });
+    }
+
+    if (env.historyApiVcbToken) {
+        const headers: Record<string, string> = {};
+        if (env.historyApiVcbToken) {
+            headers["x-api-key"] = env.historyApiVcbToken;
+        }
+
+        sources.push({
+            paymentMethod: "vietcombank",
+            apiUrl: `https://api.sieuthicode.net/historyapivcbv2/${env.historyApiVcbToken}`,
+            headers: Object.keys(headers).length > 0 ? headers : undefined,
+        });
+    }
+
+    return sources;
+}
+
+async function fetchTransactions(
+    source: HistorySourceConfig,
+): Promise<RemoteTransaction[]> {
+    const response = await axios.get(source.apiUrl, {
+        timeout: 10000,
+        headers: source.headers,
+    });
+
+    return Array.isArray(response.data?.transactions)
+        ? (response.data.transactions as RemoteTransaction[])
+        : [];
+}
+
 export function startInvoiceReconciliationJob(logger: FastifyBaseLogger): void {
-    if (!env.historyApiToken) {
+    const sources = getHistorySourceConfigs();
+
+    if (!sources.length) {
         logger.warn(
-            "HISTORY_API_TOKEN chua duoc cau hinh; tam tat cron doi soat.",
+            "Chua cau hinh token history API cho MBBank/Vietcombank; tam tat cron doi soat.",
         );
         return;
     }
@@ -46,65 +93,73 @@ export function startInvoiceReconciliationJob(logger: FastifyBaseLogger): void {
                     logger.info(`Da danh dau ${expiredCount} hoa don het han`);
                 }
 
-                const apiUrl = `https://api.sieuthicode.net/historyapimbbankv2/${env.historyApiToken}`;
-                const response = await axios.get(apiUrl, { timeout: 10000 });
-                const transactions = Array.isArray(response.data?.transactions)
-                    ? (response.data.transactions as RemoteTransaction[])
-                    : [];
+                for (const source of sources) {
+                    try {
+                        const transactions = await fetchTransactions(source);
 
-                if (!transactions.length) {
-                    return;
-                }
+                        for (const transaction of transactions) {
+                            if (transaction.type !== "IN") {
+                                continue;
+                            }
 
-                for (const transaction of transactions) {
-                    if (transaction.type !== "IN") {
-                        continue;
+                            const orderId = parseOrderId(
+                                transaction.description ?? "",
+                                env.memoPrefix,
+                            );
+
+                            if (!orderId) {
+                                continue;
+                            }
+
+                            const invoice = await InvoiceModel.findOne({
+                                invoiceId: orderId,
+                                status: "pending",
+                                expiresAt: { $gt: new Date() },
+                                $or: [
+                                    { paymentMethods: source.paymentMethod },
+                                    { paymentMethods: { $exists: false } },
+                                ],
+                            });
+
+                            if (!invoice) {
+                                continue;
+                            }
+
+                            const amountValue = normalizeAmount(
+                                transaction.amount,
+                            );
+
+                            if (
+                                typeof amountValue === "number" &&
+                                amountValue < invoice.amount
+                            ) {
+                                continue;
+                            }
+
+                            invoice.status = "completed";
+                            invoice.completedAt = new Date();
+                            invoice.transactionSnapshot = {
+                                transactionID: transaction.transactionID,
+                                amount: amountValue,
+                                description: transaction.description,
+                                transactionDate: transaction.transactionDate,
+                                type: transaction.type,
+                                paymentMethod: source.paymentMethod,
+                            };
+
+                            await invoice.save();
+                            await notifyInvoiceWebhook(
+                                invoice,
+                                "invoice.completed",
+                                logger,
+                            );
+                        }
+                    } catch (error) {
+                        logger.error(
+                            { err: error, paymentMethod: source.paymentMethod },
+                            "Lay lich su giao dich that bai",
+                        );
                     }
-
-                    const orderId = parseOrderId(
-                        transaction.description ?? "",
-                        env.memoPrefix,
-                    );
-
-                    if (!orderId) {
-                        continue;
-                    }
-
-                    const invoice = await InvoiceModel.findOne({
-                        invoiceId: orderId,
-                        status: "pending",
-                        expiresAt: { $gt: new Date() },
-                    });
-
-                    if (!invoice) {
-                        continue;
-                    }
-
-                    const amountValue = normalizeAmount(transaction.amount);
-
-                    if (
-                        typeof amountValue === "number" &&
-                        amountValue < invoice.amount
-                    ) {
-                        continue;
-                    }
-
-                    invoice.status = "completed";
-                    invoice.completedAt = new Date();
-                    invoice.transactionSnapshot = {
-                        transactionID: transaction.transactionID,
-                        amount: amountValue,
-                        description: transaction.description,
-                        transactionDate: transaction.transactionDate,
-                        type: transaction.type,
-                    };
-
-                    await invoice.save();
-                    await notifyInvoiceWebhook(
-                        invoice,
-                        "invoice.completed",
-                        logger,
-                    );
                 }
             } catch (error) {
                 logger.error({ err: error }, "Cron doi soat hoa don gap loi");

@@ -1,15 +1,38 @@
-# HPayment API Documentation
+# Hyper Tech Payment Gateway - Full API Docs
 
-Base URL: `http://localhost:4000/api`
+Base URL:
+
+```text
+http://localhost:4000/api
+```
+
+## Auth Summary
+
+| API group | Auth type |
+|---|---|
+| Auth | Public (except `/auth/me`) |
+| Invoices list | JWT (`Authorization: Bearer <token>`) |
+| Invoice create | API key (`x-api-key`) |
+| Invoice detail | Origin guard (`Origin` or `Referer`) |
+| Invoice payment methods | Origin guard (`Origin` or `Referer`) |
+| Dashboard | Public |
+| Settings | JWT (`Authorization: Bearer <token>`) |
+
+Origin guard allow-list (hardcoded in server):
+
+- `https://payment.hypertechstudio.xyz`
+- `http://localhost:3000`
 
 ---
 
-## Authentication APIs
+## 1. Authentication APIs
 
-### POST /auth/login
-Đăng nhập và lấy JWT token.
+### 1.1 POST `/auth/login`
 
-**Request:**
+Login and return JWT token.
+
+Request body example:
+
 ```json
 {
   "email": "admin@hpayment.vn",
@@ -17,7 +40,8 @@ Base URL: `http://localhost:4000/api`
 }
 ```
 
-**Response (200):**
+Response 200 example:
+
 ```json
 {
   "success": true,
@@ -29,7 +53,23 @@ Base URL: `http://localhost:4000/api`
 }
 ```
 
-**Response (401):**
+Response 400 example:
+
+```json
+{
+  "success": false,
+  "message": "Thong tin dang nhap khong hop le",
+  "issues": {
+    "formErrors": [],
+    "fieldErrors": {
+      "email": ["Email khong hop le"]
+    }
+  }
+}
+```
+
+Response 401 example:
+
 ```json
 {
   "success": false,
@@ -37,12 +77,18 @@ Base URL: `http://localhost:4000/api`
 }
 ```
 
----
+### 1.2 POST `/auth/logout`
 
-### POST /auth/logout
-Đăng xuất (client xóa token).
+Logout endpoint (for JWT app, client usually removes token).
 
-**Response (200):**
+Request body example:
+
+```json
+{}
+```
+
+Response 200 example:
+
 ```json
 {
   "success": true,
@@ -50,17 +96,18 @@ Base URL: `http://localhost:4000/api`
 }
 ```
 
----
+### 1.3 GET `/auth/me`
 
-### GET /auth/me
-Lấy thông tin user hiện tại.
+Get current user profile.
 
-**Headers:**
-```
+Required header:
+
+```text
 Authorization: Bearer <jwt-token>
 ```
 
-**Response (200):**
+Response 200 example:
+
 ```json
 {
   "email": "admin@hpayment.vn",
@@ -68,14 +115,257 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
+Response 401 example:
+
+```json
+{
+  "message": "Khong duoc phep: Token het han hoac khong hop le"
+}
+```
+
 ---
 
-## Dashboard APIs
+## 2. Invoice APIs
 
-### GET /dashboard/stats
-Thống kê doanh thu và hóa đơn.
+### 2.1 GET `/invoices`
 
-**Response (200):**
+List invoices with pagination.
+
+Required header:
+
+```text
+Authorization: Bearer <jwt-token>
+```
+
+Query params:
+
+- `page` (number, default `1`)
+- `limit` (number, default `20`, max `100`)
+- `status` (`pending | completed | failed | expired`)
+
+Example request:
+
+```text
+GET /api/invoices?page=1&limit=20&status=pending
+```
+
+Response 200 example:
+
+```json
+{
+  "invoices": [
+    {
+      "invoiceId": 1205,
+      "memoCode": "HTS1205",
+      "amount": 99000,
+      "currency": "VND",
+      "paymentMethods": ["mbbank", "vietcombank"],
+      "status": "pending",
+      "description": "Order #7123",
+      "siteUrl": "https://merchant-demo.hypertech.vn",
+      "createdAt": "2026-02-27T08:30:00.000Z",
+      "expiresAt": "2026-02-27T08:45:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "totalPages": 1
+  }
+}
+```
+
+### 2.2 POST `/invoices`
+
+Create new invoice.
+
+Required header:
+
+```text
+x-api-key: <api-key>
+```
+
+Request body example:
+
+```json
+{
+  "amount": 99000,
+  "currency": "VND",
+  "siteUrl": "https://merchant-demo.hypertech.vn",
+  "paymentMethods": ["mbbank", "vietcombank"],
+  "description": "Order #7123",
+  "webhookUrl": "https://merchant-demo.hypertech.vn/payment/callback"
+}
+```
+
+Notes:
+
+- `paymentMethods` is optional.
+- If omitted, backend defaults to `["mbbank", "vietcombank"]`.
+
+Response 201 example:
+
+```json
+{
+  "invoice": {
+    "invoiceId": 1205,
+    "memoCode": "HTS1205",
+    "siteUrl": "https://merchant-demo.hypertech.vn",
+    "siteOrigin": "https://merchant-demo.hypertech.vn",
+    "amount": 99000,
+    "currency": "VND",
+    "paymentMethods": ["mbbank", "vietcombank"],
+    "description": "Order #7123",
+    "status": "pending",
+    "webhookUrl": "https://merchant-demo.hypertech.vn/payment/callback",
+    "expiresAt": "2026-02-27T08:45:00.000Z",
+    "createdAt": "2026-02-27T08:30:00.000Z",
+    "updatedAt": "2026-02-27T08:30:00.000Z"
+  }
+}
+```
+
+Response 400 example:
+
+```json
+{
+  "message": "Payload khong hop le",
+  "issues": {
+    "formErrors": [],
+    "fieldErrors": {
+      "amount": ["So tien phai lon hon 0"]
+    }
+  }
+}
+```
+
+Response 403 example:
+
+```json
+{
+  "message": "siteUrl khong nam trong danh sach duoc phep"
+}
+```
+
+### 2.3 GET `/invoices/:invoiceId`
+
+Get invoice detail by `invoiceId`.
+
+Required header (`Origin` or `Referer`):
+
+```text
+Origin: http://localhost:3000
+```
+
+Example request:
+
+```text
+GET /api/invoices/1205
+```
+
+Response 200 example:
+
+```json
+{
+  "invoice": {
+    "invoiceId": 1205,
+    "memoCode": "HTS1205",
+    "siteUrl": "https://merchant-demo.hypertech.vn",
+    "siteOrigin": "https://merchant-demo.hypertech.vn",
+    "amount": 99000,
+    "currency": "VND",
+    "paymentMethods": ["mbbank", "vietcombank"],
+    "description": "Order #7123",
+    "status": "completed",
+    "transactionSnapshot": {
+      "transactionID": "5388 - 71420",
+      "amount": 99000,
+      "description": "822730.310124.205233.SP HTS1205",
+      "transactionDate": "31/01/2024",
+      "type": "IN",
+      "paymentMethod": "vietcombank"
+    },
+    "expiresAt": "2026-02-27T08:45:00.000Z",
+    "completedAt": "2026-02-27T08:33:25.000Z",
+    "createdAt": "2026-02-27T08:30:00.000Z",
+    "updatedAt": "2026-02-27T08:33:25.000Z"
+  }
+}
+```
+
+Response 403 example:
+
+```json
+{
+  "message": "Khong duoc phep truy cap tu origin nay"
+}
+```
+
+Response 404 example:
+
+```json
+{
+  "message": "Khong tim thay hoa don"
+}
+```
+
+### 2.4 GET `/invoices/:invoiceId/payment-methods`
+
+Get payment method info for a specific invoice.
+
+Required header (`Origin` or `Referer`):
+
+```text
+Origin: http://localhost:3000
+```
+
+Example request:
+
+```text
+GET /api/invoices/1205/payment-methods
+```
+
+Response 200 example:
+
+```json
+{
+  "invoiceId": 1205,
+  "amount": 99000,
+  "memoCode": "HTS1205",
+  "paymentMethods": [
+    {
+      "method": "mbbank",
+      "bankCode": "MB",
+      "bankName": "MBBank",
+      "accountNumber": "0347970961",
+      "accountName": "Nguyen Viet Hieu",
+      "logo": "https://cdn.vietqr.io/img/MB.png",
+      "qrCode": "https://img.vietqr.io/image/MB-0347970961-qr_only.png?amount=99000&addInfo=HTS1205"
+    },
+    {
+      "method": "vietcombank",
+      "bankCode": "VCB",
+      "bankName": "Vietcombank",
+      "accountNumber": "3335085080",
+      "accountName": "Nguyen Viet Hieu",
+      "logo": "https://cdn.vietqr.io/img/VCB.png",
+      "qrCode": "https://img.vietqr.io/image/VCB-3335085080-qr_only.png?amount=99000&addInfo=HTS1205"
+    }
+  ]
+}
+```
+
+---
+
+## 3. Dashboard APIs
+
+Note: current code does not apply JWT/API key guard to dashboard endpoints.
+
+### 3.1 GET `/dashboard/stats`
+
+Response 200 example:
+
 ```json
 {
   "todayRevenue": 15750000,
@@ -87,44 +377,46 @@ Thống kê doanh thu và hóa đơn.
 }
 ```
 
----
+### 3.2 GET `/charts/revenue`
 
-### GET /charts/revenue
-Dữ liệu biểu đồ doanh thu.
+Query params:
 
-**Query Params:**
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| days | number | 7 | Số ngày lấy dữ liệu |
+- `days` (number, default `7`)
 
-**Example:** `GET /charts/revenue?days=7`
+Example request:
 
-**Response (200):**
+```text
+GET /api/charts/revenue?days=7
+```
+
+Response 200 example:
+
 ```json
 [
-  { "date": "28/01", "revenue": 18500000, "bills": 48 },
-  { "date": "29/01", "revenue": 21200000, "bills": 55 },
-  { "date": "30/01", "revenue": 19800000, "bills": 51 },
-  { "date": "31/01", "revenue": 25600000, "bills": 62 },
-  { "date": "01/02", "revenue": 22100000, "bills": 58 },
-  { "date": "02/02", "revenue": 20300000, "bills": 53 },
-  { "date": "03/02", "revenue": 15750000, "bills": 42 }
+  { "date": "21/02", "revenue": 18500000, "bills": 48 },
+  { "date": "22/02", "revenue": 21200000, "bills": 55 },
+  { "date": "23/02", "revenue": 19800000, "bills": 51 },
+  { "date": "24/02", "revenue": 25600000, "bills": 62 },
+  { "date": "25/02", "revenue": 22100000, "bills": 58 },
+  { "date": "26/02", "revenue": 20300000, "bills": 53 },
+  { "date": "27/02", "revenue": 15750000, "bills": 42 }
 ]
 ```
 
----
+### 3.3 GET `/transactions/recent`
 
-### GET /transactions/recent
-Danh sách giao dịch gần đây.
+Query params:
 
-**Query Params:**
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| limit | number | 5 | Số giao dịch trả về |
+- `limit` (number, default `5`)
 
-**Example:** `GET /transactions/recent?limit=5`
+Example request:
 
-**Response (200):**
+```text
+GET /api/transactions/recent?limit=5
+```
+
+Response 200 example:
+
 ```json
 [
   {
@@ -140,149 +432,29 @@ Danh sách giao dịch gần đây.
     "status": "pending",
     "time": "14:28",
     "description": "Order #7890"
-  },
-  {
-    "id": "INV-001245",
-    "amount": 520000,
-    "status": "expired",
-    "time": "14:15",
-    "description": "Order #7889"
   }
 ]
 ```
 
 ---
 
-## Invoice APIs
+## 4. Settings APIs
 
-### GET /invoices
-Danh sách tất cả hóa đơn (yêu cầu JWT).
+All settings endpoints require:
 
-**Headers:**
-```
+```text
 Authorization: Bearer <jwt-token>
 ```
 
-**Query Params:**
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| page | number | 1 | Trang hiện tại |
-| limit | number | 20 | Số item mỗi trang (max 100) |
-| status | string | - | Filter: pending, completed, failed, expired |
+### 4.1 GET `/settings`
 
-**Example:** `GET /invoices?page=1&limit=20&status=completed`
+Response 200 example:
 
-**Response (200):**
 ```json
 {
-  "invoices": [
-    {
-      "invoiceId": 1247,
-      "memoCode": "HTS1247",
-      "amount": 250000,
-      "currency": "VND",
-      "status": "completed",
-      "description": "Order #7891",
-      "siteUrl": "https://merchant-demo.hypertech.vn",
-      "createdAt": "2026-02-04T07:32:00.000Z",
-      "completedAt": "2026-02-04T07:35:00.000Z",
-      "expiresAt": "2026-02-04T07:47:00.000Z"
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "limit": 20,
-    "total": 1247,
-    "totalPages": 63
-  }
-}
-```
-
----
-
-### POST /invoices
-Tạo hóa đơn mới (yêu cầu API Key).
-
-**Headers:**
-```
-X-API-Key: <api-key>
-```
-
-**Request:**
-```json
-{
-  "amount": 250000,
-  "currency": "VND",
-  "siteUrl": "https://merchant-demo.hypertech.vn",
-  "description": "Order #7891",
-  "webhookUrl": "https://webhook.site/your-id"
-}
-```
-
-**Response (201):**
-```json
-{
-  "invoice": {
-    "invoiceId": 1248,
-    "memoCode": "HTS1248",
-    "amount": 250000,
-    "currency": "VND",
-    "status": "pending",
-    "description": "Order #7891",
-    "expiresAt": "2026-02-04T08:00:00.000Z",
-    "createdAt": "2026-02-04T07:45:00.000Z"
-  }
-}
-```
-
-**Response (403):**
-```json
-{
-  "message": "siteUrl khong nam trong danh sach duoc phep"
-}
-```
-
----
-
-### GET /invoices/:invoiceId
-Lấy thông tin hóa đơn theo ID.
-
-**Example:** `GET /invoices/1247`
-
-**Response (200):**
-```json
-{
-  "invoice": {
-    "invoiceId": 1247,
-    "memoCode": "HTS1247",
-    "amount": 250000,
-    "currency": "VND",
-    "status": "completed",
-    "description": "Order #7891",
-    "expiresAt": "2026-02-04T07:47:00.000Z",
-    "completedAt": "2026-02-04T07:35:00.000Z",
-    "createdAt": "2026-02-04T07:32:00.000Z"
-  }
-}
-```
-
----
-
-## Settings APIs (Yêu cầu JWT)
-
-### GET /settings
-Lấy tất cả settings.
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
-
-**Response (200):**
-```json
-{
-  "apiKey": "hypertech-api-a1b2-c3d4-e5f6-g7h8",
-  "webhookUrl": "https://webhook.site/your-webhook-id",
+  "apiKey": "hypertech-api-a1b2-c3d4-e5f6",
+  "webhookSecret": "whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "webhookUrl": "https://merchant-demo.hypertech.vn/webhook",
   "allowedSites": [
     "https://merchant-demo.hypertech.vn",
     "https://shop.example.com"
@@ -290,86 +462,106 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
----
+### 4.2 PUT `/settings`
 
-### PUT /settings
-Cập nhật tất cả settings.
+Request body example:
 
-**Request:**
 ```json
 {
-  "webhookUrl": "https://new-webhook.site/id",
+  "webhookUrl": "https://merchant-demo.hypertech.vn/webhook",
   "allowedSites": [
     "https://merchant-demo.hypertech.vn",
-    "https://new-site.com"
+    "https://shop.example.com"
   ]
 }
 ```
 
-**Response (200):**
+Response 200 example:
+
 ```json
 {
   "success": true,
   "message": "Luu settings thanh cong",
   "settings": {
-    "apiKey": "hypertech-api-a1b2-c3d4-e5f6-g7h8",
-    "webhookUrl": "https://new-webhook.site/id",
+    "apiKey": "hypertech-api-a1b2-c3d4-e5f6",
+    "webhookSecret": "whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "webhookUrl": "https://merchant-demo.hypertech.vn/webhook",
     "allowedSites": [
       "https://merchant-demo.hypertech.vn",
-      "https://new-site.com"
+      "https://shop.example.com"
     ]
   }
 }
 ```
 
----
+### 4.3 PUT `/settings/webhook`
 
-### PUT /settings/webhook
-Cập nhật webhook URL.
+Request body example:
 
-**Request:**
 ```json
 {
-  "webhookUrl": "https://webhook.site/new-id"
+  "webhookUrl": "https://merchant-demo.hypertech.vn/new-webhook"
 }
 ```
 
-**Response (200):**
+Response 200 example:
+
 ```json
 {
   "success": true,
   "message": "Cap nhat webhook thanh cong",
-  "webhookUrl": "https://webhook.site/new-id"
+  "webhookUrl": "https://merchant-demo.hypertech.vn/new-webhook"
 }
 ```
 
----
+### 4.4 POST `/settings/api-key/regenerate`
 
-### POST /settings/api-key/regenerate
-Tạo API key mới.
+Request body example:
 
-**Response (200):**
+```json
+{}
+```
+
+Response 200 example:
+
 ```json
 {
   "success": true,
   "message": "Tao API key moi thanh cong",
-  "apiKey": "hypertech-api-x1y2-z3w4-a5b6-c7d8"
+  "apiKey": "hypertech-api-z1y2-x3w4-v5u6"
 }
 ```
 
----
+### 4.5 POST `/settings/webhook-secret/regenerate`
 
-### POST /settings/allowed-sites
-Thêm site được phép.
+Request body example:
 
-**Request:**
+```json
+{}
+```
+
+Response 200 example:
+
+```json
+{
+  "success": true,
+  "message": "Tao webhook secret moi thanh cong",
+  "webhookSecret": "whsec_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+}
+```
+
+### 4.6 POST `/settings/allowed-sites`
+
+Request body example:
+
 ```json
 {
   "site": "https://new-merchant.com"
 }
 ```
 
-**Response (200):**
+Response 200 example:
+
 ```json
 {
   "success": true,
@@ -381,14 +573,24 @@ Thêm site được phép.
 }
 ```
 
----
+Response 400 example (duplicate):
 
-### DELETE /settings/allowed-sites/:site
-Xóa site khỏi danh sách.
+```json
+{
+  "message": "Site da ton tai trong danh sach"
+}
+```
 
-**Example:** `DELETE /settings/allowed-sites/https%3A%2F%2Fnew-merchant.com`
+### 4.7 DELETE `/settings/allowed-sites/:site`
 
-**Response (200):**
+Example request:
+
+```text
+DELETE /api/settings/allowed-sites/https%3A%2F%2Fnew-merchant.com
+```
+
+Response 200 example:
+
 ```json
 {
   "success": true,
@@ -399,37 +601,56 @@ Xóa site khỏi danh sách.
 }
 ```
 
+Response 404 example:
+
+```json
+{
+  "message": "Site khong ton tai trong danh sach"
+}
+```
+
 ---
 
-## Error Responses
+## 5. Common Error Responses
 
-### 400 Bad Request
+400 example:
+
 ```json
 {
   "message": "Payload khong hop le",
   "issues": {
-    "fieldErrors": {
-      "email": ["Email khong hop le"]
-    }
+    "formErrors": [],
+    "fieldErrors": {}
   }
 }
 ```
 
-### 401 Unauthorized
+401 example:
+
 ```json
 {
   "message": "Khong duoc phep: Token khong hop le"
 }
 ```
 
-### 404 Not Found
+403 example:
+
+```json
+{
+  "message": "Khong duoc phep truy cap tu origin nay"
+}
+```
+
+404 example:
+
 ```json
 {
   "message": "Khong tim thay hoa don"
 }
 ```
 
-### 500 Internal Server Error
+500 example:
+
 ```json
 {
   "message": "Khong the thuc hien yeu cau"

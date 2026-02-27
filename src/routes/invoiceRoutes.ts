@@ -7,12 +7,18 @@ import { isSiteAllowed } from "../utils/siteGuard";
 import { createInvoice, getInvoiceById } from "../services/invoiceService";
 import { toInvoicePayload } from "../services/serializer";
 import { notifyInvoiceCreated } from "../services/discordService";
-import { InvoiceModel } from "../models/Invoice";
+import { getInvoicePaymentMethodInfos } from "../services/paymentMethodService";
+import { InvoiceModel, PAYMENT_METHODS } from "../models/Invoice";
 
 const createInvoiceSchema = z.object({
     amount: z.coerce.number().positive("So tien phai lon hon 0"),
     currency: z.string().min(3).max(8).optional(),
     siteUrl: z.string().url("siteUrl phai la URL hop le"),
+    paymentMethods: z
+        .array(z.enum(PAYMENT_METHODS))
+        .nonempty("Can it nhat 1 phuong thuc thanh toan")
+        .transform((methods) => Array.from(new Set(methods)))
+        .optional(),
     description: z.string().max(255).optional(),
     webhookUrl: z.string().url().optional(),
 });
@@ -59,6 +65,11 @@ export default async function invoiceRoutes(
                         memoCode: inv.memoCode,
                         amount: inv.amount,
                         currency: inv.currency,
+                        paymentMethods:
+                            inv.paymentMethods &&
+                            inv.paymentMethods.length > 0
+                                ? inv.paymentMethods
+                                : [...PAYMENT_METHODS],
                         status: inv.status,
                         description: inv.description,
                         siteUrl: inv.siteUrl,
@@ -151,6 +162,41 @@ export default async function invoiceRoutes(
 
             return reply.send({
                 invoice: toInvoicePayload(invoice),
+            });
+        },
+    );
+
+    // GET /api/invoices/:invoiceId/payment-methods - Get payment method info by invoice ID
+    fastify.get<{ Params: { invoiceId: string } }>(
+        "/invoices/:invoiceId/payment-methods",
+        { preHandler: originGuard },
+        async (
+            request: FastifyRequest<{ Params: { invoiceId: string } }>,
+            reply: FastifyReply,
+        ) => {
+            const parsedParams = invoiceIdParamsSchema.safeParse(
+                request.params,
+            );
+
+            if (!parsedParams.success) {
+                return reply.code(400).send({
+                    message: "Ma hoa don khong hop le",
+                });
+            }
+
+            const invoice = await getInvoiceById(parsedParams.data.invoiceId);
+
+            if (!invoice) {
+                return reply.code(404).send({
+                    message: "Khong tim thay hoa don",
+                });
+            }
+
+            return reply.send({
+                invoiceId: invoice.invoiceId,
+                amount: invoice.amount,
+                memoCode: invoice.memoCode,
+                paymentMethods: getInvoicePaymentMethodInfos(invoice),
             });
         },
     );

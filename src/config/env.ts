@@ -15,7 +15,9 @@ export const env = {
     mongoUri: process.env.MONGO_URI as string,
     apiKey: process.env.API_KEY,
     discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
-    historyApiToken: process.env.HISTORY_API_TOKEN,
+    historyApiMbToken:
+        process.env.HISTORY_API_MBBANK_TOKEN || process.env.HISTORY_API_TOKEN,
+    historyApiVcbToken: process.env.HISTORY_API_VCB_TOKEN,
     memoPrefix: "HTS",
 
     // JWT

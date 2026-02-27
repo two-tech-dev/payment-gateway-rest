@@ -3,6 +3,8 @@ import { env } from "../config/env";
 import {
     InvoiceModel,
     INVOICE_EXPIRY_MINUTES,
+    PAYMENT_METHODS,
+    type PaymentMethod,
     type InvoiceDocument,
     type InvoiceLean,
 } from "../models/Invoice";
@@ -13,9 +15,29 @@ export type CreateInvoiceDto = {
     amount: number;
     currency?: string;
     siteUrl: string;
+    paymentMethods?: PaymentMethod[];
     description?: string;
     webhookUrl?: string;
 };
+
+function normalizePaymentMethods(
+    paymentMethods?: PaymentMethod[],
+): PaymentMethod[] {
+    if (!paymentMethods || paymentMethods.length === 0) {
+        return [...PAYMENT_METHODS];
+    }
+
+    const allowed = new Set<PaymentMethod>(PAYMENT_METHODS);
+    const unique = new Set<PaymentMethod>();
+
+    for (const method of paymentMethods) {
+        if (allowed.has(method)) {
+            unique.add(method);
+        }
+    }
+
+    return unique.size > 0 ? Array.from(unique) : [...PAYMENT_METHODS];
+}
 
 export async function createInvoice(
     dto: CreateInvoiceDto,
@@ -34,6 +56,7 @@ export async function createInvoice(
         gatewayConfig.defaultCurrency ||
         "VND"
     ).toUpperCase();
+    const paymentMethods = normalizePaymentMethods(dto.paymentMethods);
 
     const expiresAt = new Date(Date.now() + INVOICE_EXPIRY_MINUTES * 60 * 1000);
 
@@ -44,6 +67,7 @@ export async function createInvoice(
         siteOrigin,
         amount: dto.amount,
         currency,
+        paymentMethods,
         description: dto.description,
         webhookUrl: dto.webhookUrl,
         expiresAt,

@@ -2,8 +2,10 @@ import type {
     InvoiceDocument,
     InvoiceLean,
     InvoiceStatus,
+    PaymentMethod,
     TransactionSnapshot,
 } from "../models/Invoice";
+import { PAYMENT_METHODS } from "../models/Invoice";
 
 export type InvoicePayload = {
     invoiceId: number;
@@ -12,6 +14,7 @@ export type InvoicePayload = {
     siteOrigin: string;
     amount: number;
     currency: string;
+    paymentMethods: PaymentMethod[];
     description?: string;
     status: InvoiceStatus;
     webhookUrl?: string;
@@ -44,6 +47,10 @@ export function toInvoicePayload(
         siteOrigin: plain.siteOrigin,
         amount: plain.amount,
         currency: plain.currency,
+        paymentMethods:
+            plain.paymentMethods && plain.paymentMethods.length > 0
+                ? plain.paymentMethods
+                : [...PAYMENT_METHODS],
         description: plain.description,
         status: plain.status,
         webhookUrl: plain.webhookUrl,
