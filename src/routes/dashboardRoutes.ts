@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { InvoiceModel } from "../models/Invoice";
+import { jwtGuard } from "../middleware/jwtAuth";
 
 const revenueQuerySchema = z.object({
     days: z.coerce.number().int().positive().default(7),
@@ -45,8 +46,9 @@ export default async function dashboardRoutes(
     fastify: FastifyInstance,
 ): Promise<void> {
     // GET /api/dashboard/stats
-    fastify.get("/dashboard/stats", async (request, reply) => {
+    fastify.get("/dashboard/stats", { preHandler: jwtGuard }, async (request, reply) => {
         try {
+            const userId = request.user!.userId;
             const now = new Date();
             const todayStart = startOfDay(now);
             const todayEnd = endOfDay(now);
@@ -62,6 +64,7 @@ export default async function dashboardRoutes(
             const todayStats = await InvoiceModel.aggregate([
                 {
                     $match: {
+                        userId: userId,
                         status: "completed",
                         completedAt: { $gte: todayStart, $lte: todayEnd },
                     },
@@ -79,6 +82,7 @@ export default async function dashboardRoutes(
             const monthlyStats = await InvoiceModel.aggregate([
                 {
                     $match: {
+                        userId: userId,
                         status: "completed",
                         completedAt: { $gte: monthStart, $lte: monthEnd },
                     },
@@ -96,6 +100,7 @@ export default async function dashboardRoutes(
             const lastMonthStats = await InvoiceModel.aggregate([
                 {
                     $match: {
+                        userId: userId,
                         status: "completed",
                         completedAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
                     },
@@ -118,17 +123,18 @@ export default async function dashboardRoutes(
                 lastMonthBills: lastMonthStats[0]?.bills || 0,
             });
         } catch (error) {
-            request.log.error({ err: error }, "Lay dashboard stats that bai");
-            return reply.code(500).send({ message: "Khong the lay dashboard stats" });
+            request.log.error({ err: error }, "Lấy thống kê dashboard thất bại");
+            return reply.code(500).send({ message: "Không thể lấy thống kê dashboard" });
         }
     });
 
     // GET /api/charts/revenue?days=7
-    fastify.get("/charts/revenue", async (request, reply) => {
+    fastify.get("/charts/revenue", { preHandler: jwtGuard }, async (request, reply) => {
         const parseResult = revenueQuerySchema.safeParse(request.query);
         const days = parseResult.success ? parseResult.data.days : 7;
 
         try {
+            const userId = request.user!.userId;
             const now = new Date();
             const result: { date: string; revenue: number; bills: number }[] = [];
 
@@ -141,6 +147,7 @@ export default async function dashboardRoutes(
                 const dayStats = await InvoiceModel.aggregate([
                     {
                         $match: {
+                            userId: userId,
                             status: "completed",
                             completedAt: { $gte: dayStart, $lte: dayEnd },
                         },
@@ -163,18 +170,19 @@ export default async function dashboardRoutes(
 
             return reply.send(result);
         } catch (error) {
-            request.log.error({ err: error }, "Lay chart revenue that bai");
-            return reply.code(500).send({ message: "Khong the lay chart data" });
+            request.log.error({ err: error }, "Lấy biểu đồ doanh thu thất bại");
+            return reply.code(500).send({ message: "Không thể lấy dữ liệu biểu đồ" });
         }
     });
 
     // GET /api/transactions/recent?limit=5
-    fastify.get("/transactions/recent", async (request, reply) => {
+    fastify.get("/transactions/recent", { preHandler: jwtGuard }, async (request, reply) => {
         const parseResult = recentTransactionsQuerySchema.safeParse(request.query);
         const limit = parseResult.success ? parseResult.data.limit : 5;
 
         try {
-            const transactions = await InvoiceModel.find()
+            const userId = request.user!.userId;
+            const transactions = await InvoiceModel.find({ userId })
                 .sort({ createdAt: -1 })
                 .limit(limit)
                 .lean();
@@ -193,8 +201,8 @@ export default async function dashboardRoutes(
 
             return reply.send(result);
         } catch (error) {
-            request.log.error({ err: error }, "Lay recent transactions that bai");
-            return reply.code(500).send({ message: "Khong the lay transactions" });
+            request.log.error({ err: error }, "Lấy giao dịch gần đây thất bại");
+            return reply.code(500).send({ message: "Không thể lấy giao dịch" });
         }
     });
 }

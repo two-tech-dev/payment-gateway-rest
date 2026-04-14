@@ -5,13 +5,10 @@ import type {
     PaymentMethod,
     TransactionSnapshot,
 } from "../models/Invoice";
-import { PAYMENT_METHODS } from "../models/Invoice";
 
 export type InvoicePayload = {
     invoiceId: number;
     memoCode: string;
-    siteUrl: string;
-    siteOrigin: string;
     amount: number;
     currency: string;
     paymentMethods: PaymentMethod[];
@@ -43,14 +40,12 @@ export function toInvoicePayload(
     return {
         invoiceId: plain.invoiceId,
         memoCode: plain.memoCode,
-        siteUrl: plain.siteUrl,
-        siteOrigin: plain.siteOrigin,
         amount: plain.amount,
         currency: plain.currency,
         paymentMethods:
             plain.paymentMethods && plain.paymentMethods.length > 0
                 ? plain.paymentMethods
-                : [...PAYMENT_METHODS],
+                : [],
         description: plain.description,
         status: plain.status,
         webhookUrl: plain.webhookUrl,

@@ -1,24 +1,22 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { apiKeyGuard } from "../middleware/apiKeyAuth";
-import { originGuard } from "../middleware/originGuard";
 import { jwtGuard } from "../middleware/jwtAuth";
-import { isSiteAllowed } from "../utils/siteGuard";
 import { createInvoice, getInvoiceById } from "../services/invoiceService";
+import { UserBankApiModel } from "../models/UserBankApi";
 import { toInvoicePayload } from "../services/serializer";
 import { notifyInvoiceCreated } from "../services/discordService";
 import { getInvoicePaymentMethodInfos } from "../services/paymentMethodService";
-import { InvoiceModel, PAYMENT_METHODS } from "../models/Invoice";
+import { InvoiceModel } from "../models/Invoice";
 
 const createInvoiceSchema = z.object({
     amount: z.coerce.number().positive("So tien phai lon hon 0"),
     currency: z.string().min(3).max(8).optional(),
-    siteUrl: z.string().url("siteUrl phai la URL hop le"),
+    memoCode: z.string().min(1).max(50).optional(),
     paymentMethods: z
-        .array(z.enum(PAYMENT_METHODS))
+        .array(z.string())
         .nonempty("Can it nhat 1 phuong thuc thanh toan")
-        .transform((methods) => Array.from(new Set(methods)))
-        .optional(),
+        .transform((methods) => Array.from(new Set(methods))),
     description: z.string().max(255).optional(),
     webhookUrl: z.string().url().optional(),
 });
@@ -69,10 +67,9 @@ export default async function invoiceRoutes(
                             inv.paymentMethods &&
                             inv.paymentMethods.length > 0
                                 ? inv.paymentMethods
-                                : [...PAYMENT_METHODS],
+                                : [],
                         status: inv.status,
                         description: inv.description,
-                        siteUrl: inv.siteUrl,
                         createdAt: inv.createdAt,
                         completedAt: inv.completedAt,
                         expiresAt: inv.expiresAt,
@@ -85,9 +82,9 @@ export default async function invoiceRoutes(
                     },
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Lay danh sach invoices that bai");
+                request.log.error({ err: error }, "Lấy danh sách hóa đơn thất bại");
                 return reply.code(500).send({
-                    message: "Khong the lay danh sach hoa don",
+                    message: "Không thể lấy danh sách hóa đơn",
                 });
             }
         },
@@ -102,33 +99,41 @@ export default async function invoiceRoutes(
 
             if (!parseResult.success) {
                 return reply.code(400).send({
-                    message: "Payload khong hop le",
+                    message: "Payload không hợp lệ",
                     issues: parseResult.error.flatten(),
                 });
             }
 
             const payload = parseResult.data;
 
-            // Check allowed sites from database
-            const isAllowed = await isSiteAllowed(payload.siteUrl);
-            if (!isAllowed) {
+            // Kiểm tra các paymentMethods ID xem có trực thuộc vào userId này không
+            const banks = await UserBankApiModel.find({
+                _id: { $in: payload.paymentMethods },
+                userId: request.user!.userId,
+            }).lean();
+
+            if (banks.length !== payload.paymentMethods.length) {
                 return reply.code(403).send({
-                    message:
-                        "siteUrl khong nam trong danh sach duoc phep",
+                    message: "Một hoặc nhiều phương thức thanh toán không tồn tại hoặc không thuộc quyền sở hữu của API Key này",
                 });
             }
 
             try {
-                const invoice = await createInvoice(payload);
+                const invoice = await createInvoice({ ...payload, userId: request.user!.userId });
                 void notifyInvoiceCreated(invoice, request.log);
 
                 return reply.code(201).send({
-                    invoice: toInvoicePayload(invoice),
+                    success: true,
+                    invoice: {
+                        ...toInvoicePayload(invoice),
+                        verifySecret: invoice.verifySecret,
+                    },
+                    checkoutUrl: `https://api.2tech.studio/pay/${invoice.invoiceId}`,
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Tao hoa don that bai");
+                request.log.error({ err: error }, "Tạo hóa đơn thất bại");
                 return reply.code(500).send({
-                    message: "Khong the tao hoa don",
+                    message: "Không thể tạo hóa đơn",
                 });
             }
         },
@@ -137,7 +142,6 @@ export default async function invoiceRoutes(
     // GET /api/invoices/:invoiceId - Get invoice by ID
     fastify.get<{ Params: { invoiceId: string } }>(
         "/invoices/:invoiceId",
-        { preHandler: originGuard },
         async (
             request: FastifyRequest<{ Params: { invoiceId: string } }>,
             reply: FastifyReply,
@@ -148,7 +152,7 @@ export default async function invoiceRoutes(
 
             if (!parsedParams.success) {
                 return reply.code(400).send({
-                    message: "Ma hoa don khong hop le",
+                    message: "Mã hóa đơn không hợp lệ",
                 });
             }
 
@@ -169,7 +173,6 @@ export default async function invoiceRoutes(
     // GET /api/invoices/:invoiceId/payment-methods - Get payment method info by invoice ID
     fastify.get<{ Params: { invoiceId: string } }>(
         "/invoices/:invoiceId/payment-methods",
-        { preHandler: originGuard },
         async (
             request: FastifyRequest<{ Params: { invoiceId: string } }>,
             reply: FastifyReply,
@@ -180,7 +183,7 @@ export default async function invoiceRoutes(
 
             if (!parsedParams.success) {
                 return reply.code(400).send({
-                    message: "Ma hoa don khong hop le",
+                    message: "Mã hóa đơn không hợp lệ",
                 });
             }
 
@@ -196,7 +199,7 @@ export default async function invoiceRoutes(
                 invoiceId: invoice.invoiceId,
                 amount: invoice.amount,
                 memoCode: invoice.memoCode,
-                paymentMethods: getInvoicePaymentMethodInfos(invoice),
+                paymentMethods: await getInvoicePaymentMethodInfos(invoice),
             });
         },
     );

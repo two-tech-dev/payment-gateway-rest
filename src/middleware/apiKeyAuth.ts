@@ -3,7 +3,7 @@ import type {
     FastifyRequest,
     preHandlerHookHandler,
 } from "fastify";
-import { getSettings } from "../models/Settings";
+import { SettingsModel } from "../models/Settings";
 
 function extractApiKey(request: FastifyRequest): string | null {
     const headerKey = request.headers["x-api-key"];
@@ -20,12 +20,22 @@ export const apiKeyGuard: preHandlerHookHandler = async (
     reply: FastifyReply,
 ) => {
     const key = extractApiKey(request);
-    const settings = await getSettings();
 
-    if (!settings.apiKey || key !== settings.apiKey) {
+    if (!key) {
+        reply.code(401).send({
+            message: "Khong duoc phep: Thieu API key",
+        });
+        return reply;
+    }
+
+    const settings = await SettingsModel.findOne({ apiKey: key });
+
+    if (!settings) {
         reply.code(401).send({
             message: "Khong duoc phep: API key khong hop le",
         });
         return reply;
     }
+
+    request.user = { userId: String(settings.userId), email: "" };
 };

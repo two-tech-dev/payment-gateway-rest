@@ -1,9 +1,8 @@
-import { Schema, model, type Document } from "mongoose";
+import { Schema, model, type Document, Types } from "mongoose";
 import gatewayConfig from "../config/gatewayConfig";
 
 export type InvoiceStatus = "pending" | "completed" | "failed" | "expired";
-export const PAYMENT_METHODS = ["mbbank", "vietcombank"] as const;
-export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+export type PaymentMethod = string;
 
 export const INVOICE_EXPIRY_MINUTES = 15;
 
@@ -17,12 +16,12 @@ export interface TransactionSnapshot {
 }
 
 export interface Invoice {
+    userId: Types.ObjectId;
     invoiceId: number;
     memoCode: string;
-    siteUrl: string;
-    siteOrigin: string;
     amount: number;
     currency: string;
+    verifySecret: string;
     paymentMethods: PaymentMethod[];
     description?: string;
     status: InvoiceStatus;
@@ -32,6 +31,7 @@ export interface Invoice {
     completedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
+    isDepositProcessed?: boolean;
 }
 
 export interface InvoiceDocument extends Invoice, Document {}
@@ -40,24 +40,23 @@ export type InvoiceLean = Omit<InvoiceDocument, keyof Document>;
 
 const invoiceSchema = new Schema<InvoiceDocument>(
     {
+        userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
         invoiceId: { type: Number, unique: true, required: true },
         memoCode: { type: String, unique: true, required: true },
-        siteUrl: { type: String, required: true },
-        siteOrigin: { type: String, required: true },
         amount: { type: Number, required: true },
         currency: {
             type: String,
             default: (gatewayConfig.defaultCurrency || "VND").toUpperCase(),
         },
+        verifySecret: { type: String, required: true },
         paymentMethods: {
             type: [
                 {
                     type: String,
-                    enum: PAYMENT_METHODS,
                 },
             ],
             required: true,
-            default: () => [...PAYMENT_METHODS],
+            default: () => [],
         },
         description: { type: String },
         status: {
@@ -75,6 +74,7 @@ const invoiceSchema = new Schema<InvoiceDocument>(
             type: { type: String },
         },
         completedAt: { type: Date },
+        isDepositProcessed: { type: Boolean, default: false },
     },
     {
         timestamps: true,

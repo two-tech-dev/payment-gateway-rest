@@ -6,6 +6,9 @@ import invoiceRoutes from "./routes/invoiceRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
 import settingsRoutes from "./routes/settingsRoutes";
 import authRoutes from "./routes/authRoutes";
+import bankApiRoutes from "./routes/bankApiRoutes";
+import accountRoutes from "./routes/accountRoutes";
+import depositRoutes from "./routes/depositRoutes";
 import { startInvoiceReconciliationJob } from "./jobs/invoiceReconciliation";
 import { seedAdminUser } from "./models/User";
 
@@ -36,6 +39,9 @@ async function bootstrap(): Promise<void> {
     app.register(dashboardRoutes, { prefix: "/api" });
     app.register(settingsRoutes, { prefix: "/api" });
     app.register(authRoutes, { prefix: "/api" });
+    app.register(bankApiRoutes, { prefix: "/api" });
+    app.register(accountRoutes, { prefix: "/api" });
+    app.register(depositRoutes, { prefix: "/api" });
 
     startInvoiceReconciliationJob(app.log);
 

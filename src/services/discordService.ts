@@ -50,6 +50,6 @@ export async function notifyInvoiceCreated(
     try {
         await axios.post(env.discordWebhookUrl, message, { timeout: 5000 });
     } catch (error) {
-        logger?.error({ err: error }, "Gui thong bao Discord that bai");
+        logger?.error({ err: error }, "Gửi thông báo Discord thất bại");
     }
 }

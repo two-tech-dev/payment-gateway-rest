@@ -1,69 +1,104 @@
-import {
-    PAYMENT_METHODS,
-    type InvoiceLean,
-    type PaymentMethod,
-} from "../models/Invoice";
+import { UserBankApiModel } from "../models/UserBankApi";
+import type { InvoiceLean } from "../models/Invoice";
+import { env } from "../config/env";
 
-type PaymentMethodConfig = {
-    method: PaymentMethod;
+// Bank code → VietQR bank code mapping
+const BANK_CODE_MAP: Record<string, { vietqrCode: string; logo: string }> = {
+    mbbank: { vietqrCode: "MB", logo: "https://cdn.vietqr.io/img/MB.png" },
+    seabank: { vietqrCode: "SEAB", logo: "https://cdn.vietqr.io/img/SEAB.png" },
+    tpbank: { vietqrCode: "TPB", logo: "https://cdn.vietqr.io/img/TPB.png" },
+};
+
+export type InvoicePaymentMethodInfo = {
+    method: string;
     bankCode: string;
     bankName: string;
     accountNumber: string;
     accountName: string;
     logo: string;
-};
-
-export type InvoicePaymentMethodInfo = PaymentMethodConfig & {
     qrCode: string;
 };
 
-const PAYMENT_METHOD_CONFIGS: Record<PaymentMethod, PaymentMethodConfig> = {
-    mbbank: {
-        method: "mbbank",
-        bankCode: "MB",
-        bankName: "MBBank",
-        accountNumber: "0347970961",
-        accountName: "Nguyễn Viết Hiếu",
-        logo: "https://cdn.vietqr.io/img/MB.png",
-    },
-    vietcombank: {
-        method: "vietcombank",
-        bankCode: "VCB",
-        bankName: "Vietcombank",
-        accountNumber: "3335085080",
-        accountName: "Nguyễn Viết Hiếu",
-        logo: "https://cdn.vietqr.io/img/VCB.png",
-    },
-};
-
 function buildQrCodeUrl(
-    bankCode: string,
+    vietqrCode: string,
     accountNumber: string,
     amount: number,
     memoCode: string,
 ): string {
     const encodedMemoCode = encodeURIComponent(memoCode);
-    return `https://img.vietqr.io/image/${bankCode}-${accountNumber}-qr_only.png?amount=${amount}&addInfo=${encodedMemoCode}`;
+    return `https://img.vietqr.io/image/${vietqrCode}-${accountNumber}-qr_only.png?amount=${amount}&addInfo=${encodedMemoCode}`;
 }
 
-export function getInvoicePaymentMethodInfos(
+export async function getInvoicePaymentMethodInfos(
     invoice: Pick<InvoiceLean, "paymentMethods" | "amount" | "memoCode">,
-): InvoicePaymentMethodInfo[] {
-    const methods =
-        invoice.paymentMethods && invoice.paymentMethods.length > 0
-            ? invoice.paymentMethods
-            : [...PAYMENT_METHODS];
+): Promise<InvoicePaymentMethodInfo[]> {
+    const bankIds = invoice.paymentMethods ?? [];
 
-    return methods.map((method) => {
-        const config = PAYMENT_METHOD_CONFIGS[method];
-        return {
-            ...config,
-            qrCode: buildQrCodeUrl(
-                config.bankCode,
-                config.accountNumber,
-                invoice.amount,
-                invoice.memoCode,
-            ),
-        };
-    });
+    if (bankIds.length === 0) return [];
+
+    const infos: InvoicePaymentMethodInfo[] = [];
+    const dbBankIds: string[] = [];
+
+    // Separate "system_env_bank" from normal DB bank IDs
+    for (const id of bankIds) {
+        if (id === "system_env_bank") {
+            const bankCode = env.depositBankCode || "mbbank";
+            const mapping = BANK_CODE_MAP[bankCode] || BANK_CODE_MAP["mbbank"];
+            const accountNumber = env.depositAccountNumber || "";
+            const accountName = env.depositAccountName || bankCode.toUpperCase();
+
+            infos.push({
+                method: "system_env_bank",
+                bankCode: mapping.vietqrCode,
+                bankName: bankCode.toUpperCase(),
+                accountNumber,
+                accountName,
+                logo: mapping.logo,
+                qrCode: buildQrCodeUrl(
+                    mapping.vietqrCode,
+                    accountNumber,
+                    invoice.amount,
+                    invoice.memoCode,
+                ),
+            });
+        } else {
+            dbBankIds.push(id.toString());
+        }
+    }
+
+    if (dbBankIds.length > 0) {
+        // Query UserBankApi by IDs
+        const bankConfigs = await UserBankApiModel.find({
+            _id: { $in: dbBankIds },
+        }).lean();
+
+        const dbInfos = bankConfigs
+            .map((bank) => {
+                const mapping = BANK_CODE_MAP[bank.bankCode];
+                if (!mapping) return null;
+
+                const accountNumber = bank.accountNumber || "";
+                const accountName = bank.bankName || bank.bankCode.toUpperCase();
+
+                return {
+                    method: bank._id.toString(),
+                    bankCode: mapping.vietqrCode,
+                    bankName: bank.bankName,
+                    accountNumber,
+                    accountName,
+                    logo: mapping.logo,
+                    qrCode: buildQrCodeUrl(
+                        mapping.vietqrCode,
+                        accountNumber,
+                        invoice.amount,
+                        invoice.memoCode,
+                    ),
+                };
+            })
+            .filter((item): item is InvoicePaymentMethodInfo => item !== null);
+
+        infos.push(...dbInfos);
+    }
+
+    return infos;
 }

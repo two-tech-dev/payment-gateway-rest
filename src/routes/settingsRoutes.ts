@@ -5,15 +5,15 @@ import {
     SettingsModel,
     getSettings,
     generateApiKey,
-    generateWebhookSecret,
 } from "../models/Settings";
+import { logActivity } from "../models/ActivityLog";
 
 const updateWebhookSchema = z.object({
-    webhookUrl: z.string().url("Webhook URL khong hop le").or(z.literal("")),
+    webhookUrl: z.string().url("Webhook URL không hợp lệ").or(z.literal("")),
 });
 
 const addSiteSchema = z.object({
-    site: z.string().url("URL khong hop le"),
+    site: z.string().url("URL không hợp lệ"),
 });
 
 const updateSettingsSchema = z.object({
@@ -30,16 +30,17 @@ export default async function settingsRoutes(
         { preHandler: jwtGuard },
         async (request, reply) => {
             try {
-                const settings = await getSettings();
+                const settings = await getSettings(request.user!.userId);
                 return reply.send({
                     apiKey: settings.apiKey,
-                    webhookSecret: settings.webhookSecret,
                     webhookUrl: settings.webhookUrl,
                     allowedSites: settings.allowedSites,
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Lay settings that bai");
-                return reply.code(500).send({ message: "Khong the lay settings" });
+                request.log.error({ err: error }, "Lấy cài đặt thất bại");
+                return reply
+                    .code(500)
+                    .send({ message: "Không thể lấy cài đặt" });
             }
         },
     );
@@ -53,13 +54,13 @@ export default async function settingsRoutes(
 
             if (!parseResult.success) {
                 return reply.code(400).send({
-                    message: "Payload khong hop le",
+                    message: "Payload không hợp lệ",
                     issues: parseResult.error.flatten(),
                 });
             }
 
             try {
-                const settings = await getSettings();
+                const settings = await getSettings(request.user!.userId);
 
                 if (parseResult.data.webhookUrl !== undefined) {
                     settings.webhookUrl = parseResult.data.webhookUrl;
@@ -72,17 +73,18 @@ export default async function settingsRoutes(
 
                 return reply.send({
                     success: true,
-                    message: "Luu settings thanh cong",
+                    message: "Lưu cài đặt thành công",
                     settings: {
                         apiKey: settings.apiKey,
-                        webhookSecret: settings.webhookSecret,
                         webhookUrl: settings.webhookUrl,
                         allowedSites: settings.allowedSites,
                     },
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Luu settings that bai");
-                return reply.code(500).send({ message: "Khong the luu settings" });
+                request.log.error({ err: error }, "Lưu cài đặt thất bại");
+                return reply
+                    .code(500)
+                    .send({ message: "Không thể lưu cài đặt" });
             }
         },
     );
@@ -96,24 +98,34 @@ export default async function settingsRoutes(
 
             if (!parseResult.success) {
                 return reply.code(400).send({
-                    message: "Payload khong hop le",
+                    message: "Payload không hợp lệ",
                     issues: parseResult.error.flatten(),
                 });
             }
 
             try {
-                const settings = await getSettings();
+                const settings = await getSettings(request.user!.userId);
                 settings.webhookUrl = parseResult.data.webhookUrl;
                 await settings.save();
 
+                await logActivity(
+                    request.user!.userId,
+                    "Cập nhật Webhook URL",
+                    `Webhook endpoint đã được thay đổi thành: ${settings.webhookUrl || "Trống"}`,
+                    request.ip || "Cài đặt hệ thống",
+                    "settings",
+                );
+
                 return reply.send({
                     success: true,
-                    message: "Cap nhat webhook thanh cong",
+                    message: "Cập nhật webhook thành công",
                     webhookUrl: settings.webhookUrl,
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Cap nhat webhook that bai");
-                return reply.code(500).send({ message: "Khong the cap nhat webhook" });
+                request.log.error({ err: error }, "Cập nhật webhook thất bại");
+                return reply
+                    .code(500)
+                    .send({ message: "Không thể cập nhật webhook" });
             }
         },
     );
@@ -124,44 +136,33 @@ export default async function settingsRoutes(
         { preHandler: jwtGuard },
         async (request, reply) => {
             try {
-                const settings = await getSettings();
+                const settings = await getSettings(request.user!.userId);
                 settings.apiKey = generateApiKey();
                 await settings.save();
 
+                await logActivity(
+                    request.user!.userId,
+                    "Tạo khóa API mới",
+                    "Khóa API Backend đã được tái tạo lại",
+                    request.ip || "Cài đặt hệ thống",
+                    "security",
+                );
+
                 return reply.send({
                     success: true,
-                    message: "Tao API key moi thanh cong",
+                    message: "Tạo mã API mới thành công",
                     apiKey: settings.apiKey,
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Tao API key that bai");
-                return reply.code(500).send({ message: "Khong the tao API key moi" });
+                request.log.error({ err: error }, "Tạo API key thất bại");
+                return reply
+                    .code(500)
+                    .send({ message: "Không thể tạo mã API mới" });
             }
         },
     );
 
-    // POST /api/settings/webhook-secret/regenerate
-    fastify.post(
-        "/settings/webhook-secret/regenerate",
-        { preHandler: jwtGuard },
-        async (request, reply) => {
-            try {
-                const settings = await getSettings();
-                settings.webhookSecret = generateWebhookSecret();
-                await settings.save();
-
-                return reply.send({
-                    success: true,
-                    message: "Tao webhook secret moi thanh cong",
-                    webhookSecret: settings.webhookSecret,
-                });
-            } catch (error) {
-                request.log.error({ err: error }, "Tao webhook secret that bai");
-                return reply.code(500).send({ message: "Khong the tao webhook secret moi" });
-            }
-        },
-    );
-
+ 
     // POST /api/settings/allowed-sites
     fastify.post(
         "/settings/allowed-sites",
@@ -171,18 +172,18 @@ export default async function settingsRoutes(
 
             if (!parseResult.success) {
                 return reply.code(400).send({
-                    message: "Payload khong hop le",
+                    message: "Payload không hợp lệ",
                     issues: parseResult.error.flatten(),
                 });
             }
 
             try {
-                const settings = await getSettings();
+                const settings = await getSettings(request.user!.userId);
                 const site = parseResult.data.site;
 
                 if (settings.allowedSites.includes(site)) {
                     return reply.code(400).send({
-                        message: "Site da ton tai trong danh sach",
+                        message: "Site đã tồn tại trong danh sách",
                     });
                 }
 
@@ -191,12 +192,12 @@ export default async function settingsRoutes(
 
                 return reply.send({
                     success: true,
-                    message: "Them site thanh cong",
+                    message: "Thêm site thành công",
                     allowedSites: settings.allowedSites,
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Them site that bai");
-                return reply.code(500).send({ message: "Khong the them site" });
+                request.log.error({ err: error }, "Thêm site thất bại");
+                return reply.code(500).send({ message: "Không thể thêm site" });
             }
         },
     );
@@ -207,13 +208,13 @@ export default async function settingsRoutes(
         { preHandler: jwtGuard },
         async (request, reply) => {
             try {
-                const settings = await getSettings();
+                const settings = await getSettings(request.user!.userId);
                 const siteToRemove = decodeURIComponent(request.params.site);
 
                 const index = settings.allowedSites.indexOf(siteToRemove);
                 if (index === -1) {
                     return reply.code(404).send({
-                        message: "Site khong ton tai trong danh sach",
+                        message: "Site không tồn tại trong danh sách",
                     });
                 }
 
@@ -222,12 +223,12 @@ export default async function settingsRoutes(
 
                 return reply.send({
                     success: true,
-                    message: "Xoa site thanh cong",
+                    message: "Xóa site thành công",
                     allowedSites: settings.allowedSites,
                 });
             } catch (error) {
-                request.log.error({ err: error }, "Xoa site that bai");
-                return reply.code(500).send({ message: "Khong the xoa site" });
+                request.log.error({ err: error }, "Xóa site thất bại");
+                return reply.code(500).send({ message: "Không thể xóa site" });
             }
         },
     );
