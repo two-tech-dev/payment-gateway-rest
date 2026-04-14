@@ -35,7 +35,6 @@ export async function notifyInvoiceCreated(
                         value: `${payload.amount} ${payload.currency}`,
                         inline: true,
                     },
-                    { name: "Trang", value: payload.siteOrigin, inline: false },
                     {
                         name: "Trang thai",
                         value: payload.status,

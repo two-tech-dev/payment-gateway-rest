@@ -8,14 +8,14 @@ export function normalizeSiteOrigin(siteUrl: string): string | null {
     }
 }
 
-export async function isSiteAllowed(siteUrl: string): Promise<boolean> {
+export async function isSiteAllowed(siteUrl: string, userId: string): Promise<boolean> {
     const origin = normalizeSiteOrigin(siteUrl);
 
     if (!origin) {
         return false;
     }
 
-    const settings = await getSettings();
+    const settings = await getSettings(userId);
     const allowedOrigins = new Set(
         settings.allowedSites
             .map((site) => normalizeSiteOrigin(site))
