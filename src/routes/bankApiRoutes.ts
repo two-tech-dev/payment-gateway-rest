@@ -134,22 +134,6 @@ async function fetchMBBankTransactions(
     };
 }
 
-async function deleteGatewayBank(jwtToken: string): Promise<void> {
-    const gatewayBase = buildGatewayBase();
-
-    const response = await fetch(`${gatewayBase}/bank/mbbank/delete`, {
-        method: "DELETE",
-        headers: {
-            Authorization: `Bearer ${jwtToken}`,
-        },
-    });
-
-    const rawText = await response.text();
-    if (!response.ok) {
-        throw new Error(rawText || "Không thể xóa tài khoản trên gateway");
-    }
-}
-
 async function connectGatewayBank(payload: {
     bankCode: "mbbank" | "seabank" | "tpbank";
     username: string;
@@ -316,24 +300,28 @@ async function fetchSeABankTransactions(
     };
 }
 
-async function deleteGatewayBankByCode(jwtToken: string, bankCode: string): Promise<void> {
+async function deleteGatewayBankByCode(accountNumber: string, bankCode: string): Promise<void> {
     const gatewayBase = buildGatewayBase();
     let endpoint: string;
     if (bankCode === "seabank") {
-        endpoint = `${gatewayBase}/bank/seabank/delete`;
+        endpoint = `${gatewayBase}/bank/seabank/admin-delete`;
     } else if (bankCode === "tpbank") {
-        endpoint = `${gatewayBase}/bank/tpbank/delete`;
+        endpoint = `${gatewayBase}/bank/tpbank/admin-delete`;
     } else {
-        endpoint = `${gatewayBase}/bank/mbbank/delete`;
+        endpoint = `${gatewayBase}/bank/mbbank/admin-delete`;
     }
 
     const response = await fetch(endpoint, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${jwtToken}` },
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${env.gatewayAdminToken}`,
+        },
+        body: JSON.stringify({ accountNo: accountNumber }),
     });
 
     const rawText = await response.text();
-    if (!response.ok) {
+    if (!response.ok && response.status !== 404) {
         throw new Error(rawText || "Không thể xóa tài khoản trên gateway");
     }
 }
@@ -613,7 +601,7 @@ export default async function bankApiRoutes(
             }
 
             try {
-                await deleteGatewayBankByCode(bank.gatewayJwtToken, bank.bankCode);
+                await deleteGatewayBankByCode(bank.accountNumber || bank.username, bank.bankCode);
             } catch (error) {
                 request.log.warn(
                     { err: error },
