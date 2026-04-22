@@ -128,7 +128,7 @@ export default async function invoiceRoutes(
                         ...toInvoicePayload(invoice),
                         verifySecret: invoice.verifySecret,
                     },
-                    checkoutUrl: `https://api.2tech.studio/pay/${invoice.invoiceId}`,
+                    checkoutUrl: `https://payment.hypertechstudio.xyz/pay?${invoice.invoiceId}`,
                 });
             } catch (error) {
                 request.log.error({ err: error }, "Tạo hóa đơn thất bại");
